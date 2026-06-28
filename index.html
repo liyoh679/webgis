@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>南宁市科教文化设施空间分析平台 | WebGIS期末作业</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; height: 100vh; overflow: hidden; background: #f0f2f5; }
+    .header { height: 56px; background: #1a5276; color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000; position: relative; }
+    .header h1 { font-size: 18px; font-weight: 600; letter-spacing: 1px; }
+    .header .badge { background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px; font-size: 12px; }
+    .main-container { display: flex; height: calc(100vh - 56px); }
+    .sidebar { width: 340px; background: #fff; border-right: 1px solid #e0e0e0; display: flex; flex-direction: column; overflow: hidden; z-index: 1000; }
+    .sidebar-header { padding: 16px 20px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; }
+    .sidebar-header h2 { font-size: 15px; color: #1a5276; margin-bottom: 4px; }
+    .sidebar-header p { font-size: 11px; color: #888; }
+    .sidebar-content { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .panel-section { margin-bottom: 20px; }
+    .panel-section h3 { font-size: 13px; color: #1a5276; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid #2980b9; display: flex; align-items: center; gap: 6px; }
+    .panel-section h3::before { content: ''; display: inline-block; width: 4px; height: 14px; background: #2980b9; border-radius: 2px; }
+    .layer-item { display: flex; align-items: center; padding: 8px 10px; margin-bottom: 6px; background: #f8f9fa; border-radius: 6px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
+    .layer-item:hover { background: #e8f4f8; border-color: #bee5eb; }
+    .layer-item input[type="checkbox"] { margin-right: 10px; cursor: pointer; width: 16px; height: 16px; }
+    .layer-item span { font-size: 13px; color: #444; flex: 1; }
+    .layer-color { width: 30px; height: 12px; border-radius: 2px; border: 1px solid #ccc; }
+    select { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; background: #fff; cursor: pointer; }
+    .btn { width: 100%; padding: 9px 0; border: none; border-radius: 4px; font-size: 12px; cursor: pointer; transition: all 0.2s; margin-bottom: 6px; font-family: inherit; }
+    .btn-primary { background: #2980b9; color: #fff; }
+    .btn-primary:hover { background: #1a5276; }
+    .btn-danger { background: #e74c3c; color: #fff; }
+    .btn-danger:hover { background: #c0392b; }
+    .btn-group { display: flex; gap: 6px; }
+    .btn-group .btn { flex: 1; margin-bottom: 0; }
+    .search-box { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; margin-bottom: 6px; }
+    .search-results { max-height: 150px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px; display: none; }
+    .search-result-item { padding: 8px 10px; font-size: 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background 0.15s; }
+    .search-result-item:hover { background: #e8f4f8; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .stat-card { background: #f0f7ff; padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #d6eaf8; }
+    .stat-card .value { font-size: 22px; font-weight: bold; color: #2980b9; line-height: 1.2; }
+    .stat-card .label { font-size: 11px; color: #666; margin-top: 2px; }
+    .buffer-result { margin-top: 10px; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 3px solid #2980b9; display: none; font-size: 12px; }
+    .buffer-result.show { display: block; }
+    .buffer-result h4 { font-size: 12px; color: #1a5276; margin-bottom: 8px; }
+    .buffer-stat-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #e0e0e0; }
+    .buffer-stat-value { font-weight: bold; color: #2980b9; }
+    .chart-container { width: 100%; height: 220px; margin-top: 10px; background: #fff; border-radius: 6px; border: 1px solid #e0e0e0; }
+    #mapView { flex: 1; position: relative; z-index: 1; }
+    .legend-panel { position: absolute; bottom: 20px; right: 20px; background: rgba(255,255,255,0.95); padding: 14px 16px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.12); z-index: 1000; min-width: 200px; }
+    .legend-panel h4 { font-size: 12px; color: #333; margin-bottom: 8px; }
+    .legend-item { display: flex; align-items: center; margin-bottom: 5px; }
+    .legend-color { width: 28px; height: 16px; margin-right: 8px; border: 1px solid rgba(0,0,0,0.1); border-radius: 2px; }
+    .legend-label { font-size: 11px; color: #555; }
+    .tip-box { position: absolute; bottom: 20px; left: 360px; background: rgba(0,0,0,0.75); color: #fff; padding: 8px 16px; border-radius: 16px; font-size: 12px; z-index: 1000; display: none; pointer-events: none; }
+    .widget-btn { position: absolute; z-index: 1000; background: #fff; border: none; border-radius: 50%; width: 36px; height: 36px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+    #screenshotBtn { top: 16px; right: 20px; }
+    #homeBtn { top: 60px; right: 20px; }
+    .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.92); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2000; transition: opacity 0.5s; }
+    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .loading-spinner { width: 48px; height: 48px; border: 4px solid #e0e0e0; border-top-color: #2980b9; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .help-text { font-size: 11px; color: #888; margin-bottom: 8px; line-height: 1.5; }
+    .leaflet-popup-content-wrapper { border-radius: 8px !important; }
+    .leaflet-popup-content { margin: 0 !important; max-width: 400px; }
+    .popup-content { padding: 8px; }
+    .popup-header { background: #e8f4f8; color: #1a5276; padding: 10px 12px; margin: -8px -8px 10px -8px; border-radius: 6px 6px 0 0; border-bottom: 2px solid #2980b9; }
+    .popup-header h3 { font-size: 16px; margin: 0; }
+    .popup-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+    .popup-stat-card { background: #f0f7ff; padding: 8px 4px; border-radius: 4px; text-align: center; border: 1px solid #d6eaf8; }
+    .popup-stat-card .num { font-size: 18px; font-weight: bold; color: #2980b9; }
+    .popup-facility-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .popup-facility-item { display: flex; justify-content: space-between; padding: 3px 6px; font-size: 11px; background: #f9f9f9; border-radius: 3px; }
+    .popup-facility-item .count { font-weight: bold; color: #e74c3c; }
+  </style>
+</head>
+<body>
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+    <div style="margin-top:16px;color:#666;">正在加载空间数据...</div>
+  </div>
+
+  <div class="header">
+    <h1>🗺️ 南宁市科教文化设施空间分析平台</h1>
+    <span class="badge">WebGIS 期末作业展示</span>
+  </div>
+
+  <div class="main-container">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h2>功能控制面板</h2>
+        <p>基于 Leaflet + esri-leaflet + ECharts</p>
+      </div>
+      <div class="sidebar-content">
+        <div class="panel-section">
+          <h3>数据概览</h3>
+          <div class="stats-grid" id="overviewStats">
+            <div class="stat-card"><div class="value">-</div><div class="label">乡镇总数</div></div>
+            <div class="stat-card"><div class="value">-</div><div class="label">设施总数</div></div>
+            <div class="stat-card"><div class="value">-</div><div class="label">平均设施数</div></div>
+            <div class="stat-card"><div class="value">-</div><div class="label">设施最多种类</div></div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <h3>乡镇定位搜索</h3>
+          <input type="text" class="search-box" id="searchBox" placeholder="输入乡镇名称..." oninput="window._doSearch(this.value)">
+          <div class="search-results" id="searchResults"></div>
+        </div>
+
+        <div class="panel-section">
+          <h3>分级色彩渲染</h3>
+          <p class="help-text">选择字段对乡镇面进行分级设色</p>
+          <select id="renderField" onchange="window._changeRenderer()"><option>等待数据加载...</option></select>
+          <div class="chart-container" id="barChart"></div>
+        </div>
+
+        <div class="panel-section">
+          <h3>图层控制</h3>
+          <div class="layer-item" onclick="window._toggleLayer('township', this, event)">
+            <input type="checkbox" id="townshipCheck" checked onchange="window._toggleLayerCheckbox('township', this)">
+            <span>乡镇科教设施汇总</span>
+            <div class="layer-color" style="background: linear-gradient(90deg, #fef9e7, #f39c12, #c0392b)"></div>
+          </div>
+          <div class="layer-item" onclick="window._toggleLayer('roads', this, event)">
+            <input type="checkbox" id="roadsCheck" checked onchange="window._toggleLayerCheckbox('roads', this)">
+            <span>城市道路网络</span>
+            <div class="layer-color" style="background: #666"></div>
+          </div>
+          <div style="margin-top:10px;">
+            <label style="font-size:11px;color:#666;">道路图层透明度：</label>
+            <input type="range" id="roadOpacity" min="0" max="100" value="70" style="width:100%;margin-top:4px;" oninput="window._changeRoadOpacity(this.value)">
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <h3>点缓冲区空间分析</h3>
+          <p class="help-text">点击地图任意位置，分析该点周围半径内的乡镇及科教设施</p>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="window._startBuffer()">🖱️ 点缓冲</button>
+            <button class="btn btn-danger" onclick="window._clearBuffer()">清除</button>
+          </div>
+          <div style="margin-top:6px;">
+            <label style="font-size:11px;color:#666;">半径（千米）：</label>
+            <input type="number" class="search-box" id="bufferRadius" value="5" min="0.5" max="50" step="0.5" style="margin-top:4px;">
+          </div>
+          <div class="buffer-result" id="bufferResult">
+            <h4>📊 点缓冲区统计结果</h4>
+            <div id="bufferStats"></div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <h3>道路缓冲区分析</h3>
+          <p class="help-text">点击地图上任意道路，生成道路两侧缓冲带，统计沿线科教设施</p>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="window._startRoadBuffer()" style="background:#e67e22">🛣️ 道路缓冲</button>
+            <button class="btn btn-danger" onclick="window._clearRoadBuffer()">清除</button>
+          </div>
+          <div style="margin-top:6px;">
+            <label style="font-size:11px;color:#666;">道路两侧距离（米）：</label>
+            <input type="number" class="search-box" id="roadBufferRadius" value="1000" min="100" max="5000" step="100" style="margin-top:4px;">
+          </div>
+          <div class="buffer-result" id="roadBufferResult">
+            <h4>📊 道路缓冲区统计结果</h4>
+            <div id="roadBufferStats"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="mapView"></div>
+
+    <div class="legend-panel" id="legendPanel">
+      <h4 id="legendTitle">图例</h4>
+      <div id="legendContent"></div>
+    </div>
+
+    <div class="tip-box" id="tipBox">点击地图绘制缓冲区圆心</div>
+    <button class="widget-btn" id="screenshotBtn" title="截图">📷</button>
+    <button class="widget-btn" id="homeBtn" title="返回初始视图">🏠</button>
+  </div>
+
+  <script>
+    var TOWNSHIP_URL = "https://services8.arcgis.com/HOpNJOCGcy3Gi8RS/arcgis/rest/services/%E5%8D%97%E5%AE%81%E5%B8%82%E4%B9%A1%E9%95%87%E7%A7%91%E6%95%99%E8%AE%BE%E6%96%BD%E6%B1%87%E6%80%BB/FeatureServer/0";
+    var ROADS_URL = "https://services8.arcgis.com/HOpNJOCGcy3Gi8RS/arcgis/rest/services/%E5%8D%97%E5%AE%81%E5%B8%82%E9%81%93%E8%B7%AF%E6%95%B0%E6%8D%AE/FeatureServer/0";
+
+    var map, townshipLayer, roadsLayer;
+    var bufferLayer, roadBufferLayer, roadHighlightLayer, searchHighlightLayer;
+    var allFeatures = [], roadFeatures = [];
+    var numericFields = [], nameField = "", fieldMap = {};
+    var isBufferMode = false, isRoadBufferMode = false;
+    var barChart = null, currentRenderField = "";
+    var currentBreaks = [];
+
+    function calcDynamicBreaks(fieldName) {
+      var values = [];
+      for (var i = 0; i < allFeatures.length; i++) {
+        var v = allFeatures[i].properties[fieldName];
+        if (typeof v === "number" && v >= 0) values.push(v);
+      }
+      var max = 0;
+      for (var j = 0; j < values.length; j++) if (values[j] > max) max = values[j];
+      if (max <= 0) return [{min:0,max:1,color:'#fff5c8'},{min:1,max:2,color:'#fed790'},{min:2,max:3,color:'#fdad61'},{min:3,max:4,color:'#f46d43'},{min:4,max:5,color:'#a50026'}];
+      var breaks = [], step = max / 5, colors = ['#fff5c8','#fed790','#fdad61','#f46d43','#a50026'];
+      for (var b = 0; b < 5; b++) breaks.push({min: b===0?0:Math.ceil(step*b), max: Math.ceil(step*(b+1)), color: colors[b]});
+      return breaks;
+    }
+
+    function getColor(value) {
+      for (var i = currentBreaks.length - 1; i >= 0; i--) {
+        if (value >= currentBreaks[i].min && value <= currentBreaks[i].max) return currentBreaks[i].color;
+      }
+      return currentBreaks[0] ? currentBreaks[0].color : '#fff5c8';
+    }
+
+    map = L.map('mapView', { zoomControl: false }).setView([22.817, 108.366], 10);
+    L.control.zoom({ position: 'topright' }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(map);
+    L.control.scale({ position: 'bottomright', metric: true, imperial: false }).addTo(map);
+
+    townshipLayer = L.esri.featureLayer({
+      url: TOWNSHIP_URL,
+      style: function(feature) {
+        var val = currentRenderField ? feature.properties[currentRenderField] : 0;
+        if (typeof val !== "number") val = 0;
+        return { fillColor: currentRenderField ? getColor(val) : '#3388ff', weight: 1, opacity: 0.5, color: '#666', fillOpacity: 0.7 };
+      },
+      onEachFeature: function(feature, layer) {
+        layer.on('click', function(e) { if (!isBufferMode && !isRoadBufferMode) layer.bindPopup(buildPopupContent(feature.properties)).openPopup(); });
+        layer.on('mouseover', function() { layer.setStyle({ weight: 2.5, color: '#ffcc00', fillOpacity: 0.65 }); });
+        layer.on('mouseout', function() {
+          if (!isBufferMode && !isRoadBufferMode) {
+            var val = feature.properties[currentRenderField]; if (typeof val !== "number") val = 0;
+            layer.setStyle({ fillColor: getColor(val), weight: 1, opacity: 0.5, color: '#666', fillOpacity: 0.7 });
+          }
+        });
+      }
+    });
+
+    townshipLayer.on('createfeature', function(e) {
+      if (!currentRenderField) return;
+      var val = e.feature.properties[currentRenderField]; if (typeof val !== "number") val = 0;
+      e.layer.setStyle({ fillColor: getColor(val), weight: 1, opacity: 0.5, color: '#666', fillOpacity: 0.7 });
+    });
+
+    townshipLayer.addTo(map);
+
+    // 道路专用 pane，z-index 低于 overlayPane
+    map.createPane('roadsPane');
+    map.getPane('roadsPane').style.zIndex = 350;
+    var roadCanvas = L.canvas({ pane: 'roadsPane' });
+
+    // 查询服务元数据获取 maxRecordCount，然后分页加载全部道路
+    function getMaxRecordCount(url, callback) {
+      fetch(url + '?f=json').then(function(r){return r.json();}).then(function(meta){
+        callback(meta.maxRecordCount || 1000);
+      }).catch(function(){ callback(1000); });
+    }
+
+    function loadAllRoads(url, offset, collected, pageSize, callback) {
+      offset = offset || 0; collected = collected || [];
+      var queryUrl = url + '/query?where=1%3D1&outFields=*&outSR=4326&f=geojson&resultOffset=' + offset + '&resultRecordCount=' + pageSize;
+      fetch(queryUrl).then(function(r){return r.json();}).then(function(data){
+        if (data.features && data.features.length > 0) {
+          collected = collected.concat(data.features);
+          var hasMore = data.exceededTransferLimit === true || data.features.length === pageSize;
+          if (hasMore) loadAllRoads(url, offset + pageSize, collected, pageSize, callback);
+          else callback(collected);
+        } else callback(collected);
+      }).catch(function(err){ console.error(err); callback(collected); });
+    }
+
+    function createRoadsLayer(features) {
+      roadFeatures = features; // 独立保存，供缓冲区分析直接查询
+      roadsLayer = L.geoJSON({ type: 'FeatureCollection', features: features }, {
+        renderer: roadCanvas,
+        style: function() { return { color: '#555', weight: 1.5, opacity: 0.6, fillOpacity: 0 }; },
+        onEachFeature: function(feature, layer) {
+          layer.setStyle({ color: '#555', weight: 1.5, opacity: 0.6, fillOpacity: 0 });
+          layer.on('click', function(e) {
+            if (!isBufferMode && !isRoadBufferMode) {
+              var rawName = feature.properties.Name || feature.properties.name || feature.properties.道路名称 || "未知道路";
+              var roadName = fixGarbledText(rawName) || "未知道路";
+              layer.bindPopup("<div style='padding:8px;'><b>" + roadName + "</b><br><span style='color:#666;font-size:11px;'>城市道路</span></div>").openPopup();
+            }
+          });
+        }
+      }).addTo(map);
+      townshipLayer.bringToFront();
+    }
+
+    getMaxRecordCount(ROADS_URL, function(pageSize) {
+      loadAllRoads(ROADS_URL, 0, [], pageSize, createRoadsLayer);
+    });
+
+    function detectFields(props) {
+      var keys = Object.keys(props);
+      var nameCandidates = ["镇","XiangZhen","Name","NAME","name","乡镇","街道","XZQMC","乡镇名称","乡镇_街道","Name_1"];
+      for (var i = 0; i < nameCandidates.length; i++) { if (keys.indexOf(nameCandidates[i]) >= 0) { nameField = nameCandidates[i]; break; } }
+      if (!nameField) { for (var j = 0; j < keys.length; j++) { if (/name|名称|镇|街道/i.test(keys[j])) { nameField = keys[j]; break; } } }
+      if (!nameField) nameField = keys[0];
+      numericFields = []; fieldMap = {};
+      var skipPatterns = [/Shape/i, /Area/i, /Length/i, /OBJECTID/i, /^FID$/i, /^Id$/i, /GlobalID/i];
+      for (var k = 0; k < keys.length; k++) {
+        var key = keys[k], skip = false;
+        for (var s = 0; s < skipPatterns.length; s++) { if (skipPatterns[s].test(key)) { skip = true; break; } }
+        if (skip) continue;
+        var val = props[key];
+        if (typeof val === "number" && val >= 0) { numericFields.push(key); fieldMap[mapFieldName(key)] = key; }
+      }
+    }
+
+    var FIELD_DISPLAY_MAP = {
+      "总科教":"总科教设施数","总科教设施":"总科教设施数","基础教":"基础教育数","基础教育":"基础教育数",
+      "文化场":"文化场馆数","文化场馆":"文化场馆数","中学":"中学","小学":"小学","幼儿园":"幼儿园",
+      "高等院":"高等院校","高等院校":"高等院校","职业技":"职业技术学院","职业技术":"职业技术学院",
+      "培训机":"培训机构","培训机构":"培训机构","图书馆":"图书馆","博物馆":"博物馆","科技馆":"科技馆",
+      "美术馆":"美术馆","文化宫":"文化宫","会展中":"会展中心","会展中心":"会展中心","传媒机":"传媒机构",
+      "传媒机构":"传媒机构","出版社":"出版社","展览馆":"展览馆","成人教":"成人教育","成人教育":"成人教育",
+      "报社":"报社","文艺团":"文艺团体","文艺团体":"文艺团体","杂志社":"杂志社","档案馆":"档案馆",
+      "电台":"电台","电视台":"电视台","科研机":"科研机构","科研机构":"科研机构","天文馆":"天文馆","驾校":"驾校"
+    };
+
+    function mapFieldName(fieldName) {
+      if (FIELD_DISPLAY_MAP[fieldName]) return FIELD_DISPLAY_MAP[fieldName];
+      for (var mk in FIELD_DISPLAY_MAP) { if (fieldName.indexOf(mk) >= 0) return FIELD_DISPLAY_MAP[mk]; }
+      var enMappings = {"ZhongXue":"中学","ZX":"中学","XiaoXue":"小学","XX":"小学","YouErYuan":"幼儿园","YEY":"幼儿园","GaoDeng":"高等院校","GDY":"高等院校","ZhiYeJi":"职业技术学院","PeiXunJi":"培训机构","TuShuGuan":"图书馆","BoWuGuan":"博物馆","KeJiGuan":"科技馆","MeiShuGuan":"美术馆","WenHuaGong":"文化宫","HuiZhanZhong":"会展中心","BaoShe":"报社","DianShiTai":"电视台","DianTai":"电台","DangAnGuan":"档案馆","KeYanJi":"科研机构","TianWenGuan":"天文馆","JiaXiao":"驾校"};
+      for (var ek in enMappings) { if (fieldName.indexOf(ek) >= 0) return enMappings[ek]; }
+      return fieldName;
+    }
+
+    function getValue(props, key) { var mapped = fieldMap[key] || key; var v = props[mapped]; return (typeof v === "number") ? v : 0; }
+
+    function calcTotal(props) {
+      var sumFields = ["总科教设施数","总科教","总设施数","科教设施数","设施总数"];
+      for (var i = 0; i < sumFields.length; i++) { if (typeof props[sumFields[i]] === "number") { var v = props[sumFields[i]]; if (v >= 0 && v < 1000000) return Math.round(v); } }
+      var detailFields = ["中学","小学","幼儿园","高等院","职业技","培训机","图书馆","博物馆","科技馆","美术馆","文化宫","会展中","传媒机","出版社","展览馆","成人教","报社","文艺团","杂志社","档案馆","电台","电视台","科研机","天文馆","驾校"];
+      var sum = 0; for (var j = 0; j < detailFields.length; j++) sum += (props[detailFields[j]] || 0);
+      return sum;
+    }
+
+    function buildPopupContent(props) {
+      var total = calcTotal(props);
+      var eduBasic = (props["中学"]||0)+(props["小学"]||0)+(props["幼儿园"]||0);
+      var culture = (props["图书馆"]||0)+(props["博物馆"]||0)+(props["科技馆"]||0)+(props["美术馆"]||0)+(props["文化宫"]||0);
+      var facilityHtml = "";
+      var facilityOrder = [["中学","中学"],["小学","小学"],["幼儿园","幼儿园"],["高等院校","高等院校"],["职业技术","职业技术"],["培训机构","培训机构"],["图书馆","图书馆"],["博物馆","博物馆"],["科技馆","科技馆"],["美术馆","美术馆"],["文化宫","文化宫"],["会展中心","会展中心"],["报社","报社"],["电视台","电视台"],["电台","电台"],["档案馆","档案馆"],["科研机构","科研机构"],["天文馆","天文馆"],["驾校","驾校"]];
+      for (var idx = 0; idx < facilityOrder.length; idx++) { var count = getValue(props, facilityOrder[idx][1]); if (count > 0) facilityHtml += "<div class='popup-facility-item'><span>" + facilityOrder[idx][0] + "</span><span class='count'>" + count + "</span></div>"; }
+      if (!facilityHtml) facilityHtml = '<p style="font-size:11px;color:#999;text-align:center;padding:8px;">暂无设施数据</p>';
+      return "<div class='popup-content'><div class='popup-header'><h3>" + (props[nameField] || "未知区域") + "</h3><div style='font-size:11px;color:#666;margin-top:2px;'>南宁市 · 科教文化设施统计</div></div><div class='popup-stats'><div class='popup-stat-card'><div class='num'>" + total + "</div><div style='font-size:10px;color:#666;'>总设施数</div></div><div class='popup-stat-card'><div class='num'>" + eduBasic + "</div><div style='font-size:10px;color:#666;'>基础教育</div></div><div class='popup-stat-card'><div class='num'>" + culture + "</div><div style='font-size:10px;color:#666;'>文化场馆</div></div></div><div style='margin-bottom:8px;'><h4 style='font-size:12px;color:#1a5276;border-left:3px solid #2980b9;padding-left:6px;margin-bottom:6px;'>设施明细</h4><div class='popup-facility-list'>" + facilityHtml + "</div></div></div>";
+    }
+
+    window._applyRendererStyle = function() {
+      currentBreaks = calcDynamicBreaks(currentRenderField);
+      townshipLayer.setStyle(function(feature) {
+        var val = feature.properties[currentRenderField]; if (typeof val !== "number") val = 0;
+        return { fillColor: getColor(val), weight: 1, opacity: 0.5, color: '#666', fillOpacity: 0.7 };
+      });
+      updateLegend();
+    };
+
+    function updateLegend() {
+      var select = document.getElementById("renderField");
+      var selectedText = select.options[select.selectedIndex] ? select.options[select.selectedIndex].textContent : "设施数量";
+      document.getElementById("legendTitle").textContent = selectedText + " 分级图例";
+      var html = "";
+      for (var i = 0; i < currentBreaks.length; i++) {
+        var b = currentBreaks[i], label = b.min + " - " + b.max;
+        if (i === currentBreaks.length - 1) label = "> " + b.min;
+        html += "<div class='legend-item'><div class='legend-color' style='background:" + b.color + "'></div><span class='legend-label'>" + label + "</span></div>";
+      }
+      document.getElementById("legendContent").innerHTML = html;
+    }
+
+    function updateOverview() {
+      var totalFacilities = 0, maxFacilities = 0, typeCounts = {};
+      for (var i = 0; i < allFeatures.length; i++) {
+        var props = allFeatures[i].properties, count = calcTotal(props);
+        totalFacilities += count; if (count > maxFacilities) maxFacilities = count;
+        for (var k in fieldMap) typeCounts[k] = (typeCounts[k] || 0) + getValue(props, k);
+      }
+      var avg = allFeatures.length > 0 ? (totalFacilities / allFeatures.length).toFixed(1) : 0;
+      var maxType = "-", maxTypeCount = 0;
+      for (var tk in typeCounts) { if (typeCounts[tk] > maxTypeCount) { maxTypeCount = typeCounts[tk]; maxType = tk; } }
+      document.getElementById("overviewStats").innerHTML = "<div class='stat-card'><div class='value'>" + allFeatures.length + "</div><div class='label'>乡镇总数</div></div><div class='stat-card'><div class='value'>" + totalFacilities + "</div><div class='label'>设施总数</div></div><div class='stat-card'><div class='value'>" + avg + "</div><div class='label'>平均设施数</div></div><div class='stat-card'><div class='value' style='font-size:14px;padding-top:4px;'>" + maxType + "</div><div class='label'>最多设施类型</div></div>";
+      updateBarChart(typeCounts);
+    }
+
+    function initBarChart() { barChart = echarts.init(document.getElementById("barChart")); }
+
+    function updateBarChart(typeCounts) {
+      if (!barChart) return;
+      var sorted = [];
+      for (var k in typeCounts) { if (/总科教|基础教|文化场|Shape|Area|Length/i.test(k)) continue; sorted.push([k, typeCounts[k]]); }
+      sorted.sort(function(a, b) { return b[1] - a[1]; }); sorted = sorted.slice(0, 10);
+      barChart.setOption({ tooltip: { trigger: "axis", axisPointer: { type: "shadow" } }, grid: { left: "3%", right: "4%", bottom: "3%", top: "10%", containLabel: true }, xAxis: { type: "category", data: sorted.map(function(i){return i[0];}), axisLabel: { fontSize: 10, rotate: 30 } }, yAxis: { type: "value", axisLabel: { fontSize: 10 } }, series: [{ data: sorted.map(function(i){return i[1];}), type: "bar", itemStyle: { color: "#2980b9", borderRadius: [3, 3, 0, 0] }, barWidth: "60%" }] });
+    }
+
+    window._doSearch = function(keyword) {
+      var resultsDiv = document.getElementById("searchResults");
+      if (!keyword || keyword.length < 1) { resultsDiv.style.display = "none"; return; }
+      var matched = [];
+      for (var i = 0; i < allFeatures.length; i++) {
+        var name = (allFeatures[i].properties[nameField] || "").toString();
+        if (name.indexOf(keyword) >= 0) { matched.push(allFeatures[i]); if (matched.length >= 10) break; }
+      }
+      if (matched.length === 0) { resultsDiv.style.display = "none"; return; }
+      var html = "";
+      for (var j = 0; j < matched.length; j++) html += "<div class='search-result-item' onclick=\"window._zoomTo('" + matched[j].properties[nameField] + "')\">" + matched[j].properties[nameField] + "</div>";
+      resultsDiv.innerHTML = html; resultsDiv.style.display = "block";
+    };
+
+    window._zoomTo = function(townshipName) {
+      var feature = null;
+      for (var i = 0; i < allFeatures.length; i++) if (allFeatures[i].properties[nameField] === townshipName) { feature = allFeatures[i]; break; }
+      if (feature) {
+        try { var bbox = turf.bbox(feature); map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], { padding: [50, 50], maxZoom: 15 }); } catch(e) { var c = turf.center(feature); map.setView([c.geometry.coordinates[1], c.geometry.coordinates[0]], 13); }
+        if (searchHighlightLayer) map.removeLayer(searchHighlightLayer);
+        searchHighlightLayer = L.geoJSON(feature, { style: { color: '#e74c3c', weight: 4, fillOpacity: 0, opacity: 1 } }).addTo(map);
+        setTimeout(function() { if (searchHighlightLayer) { map.removeLayer(searchHighlightLayer); searchHighlightLayer = null; } }, 3000);
+        townshipLayer.eachFeature(function(layer) { if (layer.feature.properties[nameField] === townshipName) layer.bindPopup(buildPopupContent(layer.feature.properties)).openPopup(); });
+      }
+      document.getElementById("searchResults").style.display = "none";
+    };
+
+    function fixGarbledText(str) {
+      if (!str || typeof str !== "string") return "";
+      var garbledPattern = /[ÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿµ¶·¸¹º»¼½¾¿]/;
+      if (garbledPattern.test(str)) {
+        try { var bytes = []; for (var i = 0; i < str.length; i++) bytes.push(str.charCodeAt(i) & 0xFF); if (typeof TextDecoder !== "undefined") { var d = new TextDecoder("gbk"); var f = d.decode(new Uint8Array(bytes)); if (!garbledPattern.test(f)) return f; } } catch(e) {}
+        return "";
+      }
+      return str;
+    }
+
+    window._toggleLayer = function(layerType, el, evt) { if (evt) evt.stopPropagation(); var checkbox = el.querySelector('input[type="checkbox"]'); checkbox.checked = !checkbox.checked; _applyLayerVisibility(layerType, checkbox.checked); };
+    window._toggleLayerCheckbox = function(layerType, checkbox) { _applyLayerVisibility(layerType, checkbox.checked); };
+
+    function _applyLayerVisibility(layerType, visible) {
+      var layer = layerType === "township" ? townshipLayer : roadsLayer; if (!layer) return;
+      if (visible) {
+        if (layerType === "roads") layer.eachLayer(function(l) { l.setStyle({ color: '#555', weight: 1.5, opacity: 0.6, fillOpacity: 0 }); });
+        else if (layer.setOpacity) layer.setOpacity(1);
+        if (!map.hasLayer(layer)) map.addLayer(layer); if (layerType === "township") layer.bringToFront();
+      } else {
+        if (layerType === "roads") layer.eachLayer(function(l) { l.setStyle({ color: '#555', weight: 1.5, opacity: 0, fillOpacity: 0 }); });
+        else if (layer.setOpacity) layer.setOpacity(0);
+      }
+    }
+
+    window._changeRoadOpacity = function(val) {
+      var opacity = parseInt(val, 10) / 100;
+      if (roadsLayer) roadsLayer.eachLayer(function(layer) { layer.setStyle({ color: '#555', weight: 1.5, opacity: opacity, fillOpacity: 0 }); });
+    };
+
+    window._changeRenderer = function() { currentRenderField = document.getElementById("renderField").value; window._applyRendererStyle(); updateLegend(); };
+
+    window._startBuffer = function() { isBufferMode = true; document.getElementById("tipBox").style.display = "block"; document.getElementById("mapView").style.cursor = "crosshair"; };
+    window._clearBuffer = function() { if (bufferLayer) map.removeLayer(bufferLayer); document.getElementById("bufferResult").classList.remove("show"); isBufferMode = false; document.getElementById("tipBox").style.display = "none"; document.getElementById("mapView").style.cursor = ""; window._applyRendererStyle(); };
+
+    window._startRoadBuffer = function() {
+      isRoadBufferMode = true; document.getElementById("tipBox").textContent = "点击地图上的道路生成缓冲带"; document.getElementById("tipBox").style.display = "block"; document.getElementById("mapView").style.cursor = "crosshair";
+      if (roadsLayer) roadsLayer.eachLayer(function(l) { l.setStyle({ color: '#e67e22', weight: 3, opacity: 1 }); });
+    };
+
+    window._clearRoadBuffer = function() {
+      if (roadBufferLayer) map.removeLayer(roadBufferLayer); if (roadHighlightLayer) map.removeLayer(roadHighlightLayer);
+      document.getElementById("roadBufferResult").classList.remove("show"); isRoadBufferMode = false;
+      document.getElementById("tipBox").textContent = "点击地图绘制缓冲区圆心"; document.getElementById("tipBox").style.display = "none"; document.getElementById("mapView").style.cursor = "";
+      if (roadsLayer) roadsLayer.eachLayer(function(l) { l.setStyle({ color: '#555', weight: 1.5, opacity: 0.6, fillOpacity: 0 }); });
+    };
+
+    map.on('click', function(e) {
+      if (isRoadBufferMode) {
+        var roadDist = parseFloat(document.getElementById("roadBufferRadius").value);
+        if (!roadDist || roadDist <= 0) { alert("请输入有效的距离"); return; }
+        if (roadBufferLayer) map.removeLayer(roadBufferLayer); if (roadHighlightLayer) map.removeLayer(roadHighlightLayer);
+        var clickPt = turf.point([e.latlng.lng, e.latlng.lat]);
+        var nearestRoad = null, minDist = Infinity;
+        for (var ri = 0; ri < roadFeatures.length; ri++) {
+          var feat = roadFeatures[ri];
+          if (!feat || !feat.geometry) continue;
+          try {
+            var nearest = turf.nearestPointOnLine(feat, clickPt);
+            if (nearest.properties.dist < minDist) { minDist = nearest.properties.dist; nearestRoad = feat; }
+          } catch(e) {}
+        }
+        if (!nearestRoad || minDist > 0.005) { alert("未找到附近的道路，请靠近道路点击"); return; }
+        var roadFeature = nearestRoad;
+        var roadProps = roadFeature.properties;
+        var rawName = roadProps.Name || roadProps.name || roadProps.道路名称 || roadProps.RoadName || roadProps.名称 || roadProps.Road_Name || "";
+        var roadName = fixGarbledText(rawName) || "未知道路";
+        var roadBuffer = turf.buffer(roadFeature, roadDist / 1000, {units: 'kilometers'});
+        roadHighlightLayer = L.geoJSON(roadFeature, { style: { color: '#e67e22', weight: 4, opacity: 1 } }).addTo(map);
+        roadBufferLayer = L.geoJSON(roadBuffer, { style: { color: '#e67e22', fillColor: '#e67e22', fillOpacity: 0.1, weight: 2, dashArray: '5,5' } }).addTo(map);
+        var stats = { count: 0, total: 0, types: {}, roadName: roadName, townships: [] };
+        for (var i = 0; i < allFeatures.length; i++) {
+          try {
+            var featureBbox = turf.bbox(allFeatures[i]); var bufferBbox = turf.bbox(roadBuffer);
+            var bboxOverlap = featureBbox[0] <= bufferBbox[2] && featureBbox[2] >= bufferBbox[0] && featureBbox[1] <= bufferBbox[3] && featureBbox[3] >= bufferBbox[1];
+            if (!bboxOverlap) continue;
+            var intersection = turf.intersect(roadBuffer, allFeatures[i]);
+            if (intersection && turf.area(intersection) > 1) {
+              var props = allFeatures[i].properties; var tName = props[nameField] || "未知";
+              stats.count++; stats.total += calcTotal(props); stats.townships.push(tName);
+              for (var k in fieldMap) stats.types[k] = (stats.types[k] || 0) + getValue(props, k);
+            }
+          } catch(err) {}
+        }
+        var sortedTypes = []; for (var sk in stats.types) sortedTypes.push([sk, stats.types[sk]]); sortedTypes.sort(function(a, b) { return b[1] - a[1]; });
+        var typeHtml = ""; for (var st = 0; st < sortedTypes.length; st++) if (sortedTypes[st][1] > 0) typeHtml += "<div class='buffer-stat-row'><span>" + sortedTypes[st][0] + "</span><span class='buffer-stat-value'>" + sortedTypes[st][1] + "</span></div>";
+        var townshipListHtml = stats.townships.length > 0 ? "<div style='font-size:11px;color:#333;margin-bottom:8px;'>覆盖乡镇：<b>" + stats.townships.join("、") + "</b></div><hr style='border:none;border-top:1px solid #ddd;margin:8px 0;'>" : "";
+        document.getElementById("roadBufferStats").innerHTML = "<div class='buffer-stat-row'><span>道路名称</span><span class='buffer-stat-value'>" + stats.roadName + "</span></div><div class='buffer-stat-row'><span>缓冲距离</span><span class='buffer-stat-value'>" + roadDist + " 米</span></div><div class='buffer-stat-row'><span>覆盖乡镇数</span><span class='buffer-stat-value'>" + stats.count + " 个</span></div><div class='buffer-stat-row'><span>科教设施总数</span><span class='buffer-stat-value'>" + stats.total + "</span></div>" + townshipListHtml + "<div style='font-size:11px;color:#e67e22;margin-bottom:6px;font-weight:bold;'>沿线设施细分统计</div>" + (typeHtml || '<p style="color:#999;font-size:11px;">无数据</p>');
+        document.getElementById("roadBufferResult").classList.add("show");
+        isRoadBufferMode = false; document.getElementById("tipBox").textContent = "点击地图绘制缓冲区圆心"; document.getElementById("tipBox").style.display = "none"; document.getElementById("mapView").style.cursor = "";
+        if (roadsLayer) roadsLayer.eachLayer(function(l) { l.setStyle({ color: '#555', weight: 1.5, opacity: 0.6, fillOpacity: 0 }); });
+        return;
+      }
+
+      if (!isBufferMode) return;
+      var radius = parseFloat(document.getElementById("bufferRadius").value);
+      if (!radius || radius <= 0) { alert("请输入有效的半径"); return; }
+      if (bufferLayer) map.removeLayer(bufferLayer);
+      var center = turf.point([e.latlng.lng, e.latlng.lat]);
+      var buffer = turf.buffer(center, radius, {units: 'kilometers'});
+      bufferLayer = L.geoJSON(buffer, { style: { color: '#2980b9', fillColor: '#2980b9', fillOpacity: 0.1, weight: 2, dashArray: '5,5' } }).addTo(map);
+      L.circleMarker(e.latlng, { radius: 6, color: '#e74c3c', fillColor: '#e74c3c', fillOpacity: 1, weight: 2 }).addTo(bufferLayer);
+      var stats = { count: 0, total: 0, types: {} };
+      for (var i = 0; i < allFeatures.length; i++) {
+        try {
+          var featureBbox = turf.bbox(allFeatures[i]); var bufferBbox = turf.bbox(buffer);
+          var bboxOverlap = featureBbox[0] <= bufferBbox[2] && featureBbox[2] >= bufferBbox[0] && featureBbox[1] <= bufferBbox[3] && featureBbox[3] >= bufferBbox[1];
+          if (!bboxOverlap) continue;
+          var intersection = turf.intersect(buffer, allFeatures[i]);
+          if (intersection && turf.area(intersection) > 1) {
+            var props = allFeatures[i].properties; stats.count++; stats.total += calcTotal(props);
+            for (var k in fieldMap) stats.types[k] = (stats.types[k] || 0) + getValue(props, k);
+          }
+        } catch(err) {}
+      }
+      var sortedTypes = []; for (var sk in stats.types) sortedTypes.push([sk, stats.types[sk]]); sortedTypes.sort(function(a, b) { return b[1] - a[1]; });
+      var typeHtml = ""; for (var st = 0; st < sortedTypes.length; st++) if (sortedTypes[st][1] > 0) typeHtml += "<div class='buffer-stat-row'><span>" + sortedTypes[st][0] + "</span><span class='buffer-stat-value'>" + sortedTypes[st][1] + "</span></div>";
+      document.getElementById("bufferStats").innerHTML = "<div class='buffer-stat-row'><span>覆盖乡镇数</span><span class='buffer-stat-value'>" + stats.count + " 个</span></div><div class='buffer-stat-row'><span>科教设施总数</span><span class='buffer-stat-value'>" + stats.total + "</span></div><hr style='border:none;border-top:1px solid #ddd;margin:8px 0;'><div style='font-size:11px;color:#1a5276;margin-bottom:6px;font-weight:bold;'>细分统计 TOP</div>" + (typeHtml || '<p style="color:#999;font-size:11px;">无数据</p>');
+      document.getElementById("bufferResult").classList.add("show");
+      isBufferMode = false; document.getElementById("tipBox").style.display = "none"; document.getElementById("mapView").style.cursor = "";
+    });
+
+    document.getElementById("screenshotBtn").onclick = function() { alert("请使用浏览器截图功能 (Win+Shift+S) 保存当前地图视图"); };
+    document.getElementById("homeBtn").onclick = function() { map.setView([22.817, 108.366], 10); };
+
+    function initialize() {
+      initBarChart();
+      townshipLayer.query().where('1=1').run(function(err, featureCollection) {
+        if (err) {
+          document.getElementById("loadingOverlay").innerHTML = "<div style='color:#e74c3c;text-align:center;padding:20px;'><h3>数据加载失败</h3><p>请确认 ArcGIS Online 服务已设为公开共享</p><a href='" + TOWNSHIP_URL + "' target='_blank' style='color:#2980b9;'>点击测试服务</a></div>";
+          return;
+        }
+        if (!featureCollection || !featureCollection.features || featureCollection.features.length === 0) {
+          document.getElementById("loadingOverlay").innerHTML = "<div style='color:#e74c3c;text-align:center;padding:20px;'><h3>未获取到数据</h3></div>";
+          return;
+        }
+        allFeatures = featureCollection.features;
+        detectFields(allFeatures[0].properties);
+        var select = document.getElementById("renderField"); select.innerHTML = "";
+        var added = new Set();
+        for (var cnName in fieldMap) {
+          var opt = document.createElement("option"); opt.value = fieldMap[cnName]; opt.textContent = FIELD_DISPLAY_MAP[cnName] || cnName; select.appendChild(opt); added.add(fieldMap[cnName]);
+        }
+        for (var f = 0; f < numericFields.length; f++) {
+          if (!added.has(numericFields[f])) { var o = document.createElement("option"); o.value = numericFields[f]; o.textContent = FIELD_DISPLAY_MAP[numericFields[f]] || mapFieldName(numericFields[f]) || numericFields[f]; select.appendChild(o); }
+        }
+        if (select.options.length > 0) { currentRenderField = select.options[0].value; window._applyRendererStyle(); updateLegend(); }
+        updateOverview();
+        try { var bbox = turf.bbox(featureCollection); map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]); } catch(e) {}
+        document.getElementById("loadingOverlay").classList.add("hidden");
+      });
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize); else initialize();
+    window.addEventListener("resize", function() { if (barChart) barChart.resize(); });
+  </script>
+</body>
+</html>
